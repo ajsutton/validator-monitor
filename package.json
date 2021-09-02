@@ -1,0 +1,28 @@
+{
+  "name": "validator-monitor",
+  "version": "0.0.1",
+  "description": "Sidecar to monitor validators for unhelpful, but not slashable behaviour",
+  "main": "index.js",
+  "scripts": {
+    "test": "NODE_ENV=dev mocha 'test/**/*.spec.js'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajsutton/validator-monitor.git"
+  },
+  "keywords": [
+    "ethereum",
+    "eth2",
+    "beacon"
+  ],
+  "author": "Adrian Sutton <adrian.sutton@consensys.net>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/ajsutton/validator-monitor/issues"
+  },
+  "homepage": "https://github.com/ajsutton/validator-monitor#readme",
+  "devDependencies": {
+    "chai": "^4.3.4",
+    "mocha": "^9.1.1"
+  }
+}
