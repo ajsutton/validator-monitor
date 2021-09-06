@@ -1,6 +1,5 @@
 const got = require('got');
 const BitSet = require('bitset');
-const common = require('mocha/lib/interfaces/common');
 
 const MAX_INCLUSION_DISTANCE = 32;
 
@@ -11,6 +10,7 @@ const MAX_INCLUSION_DISTANCE = 32;
 // Blocks are inserted as blockNumber % 32 so the array automatically overwrites itself to prune.
 const recentInclusions = [];
 var latestBlockNumber = 0;
+var reporter;
 
 // TODO: Identify reorgs by checking root of parent block?
 // TODO: Record where attestations were seen (block + attestation index)
@@ -27,7 +27,7 @@ function recordAttestations(slot, proposerIndex, attestations) {
     recentInclusions[slot % MAX_INCLUSION_DISTANCE] = inclusions;
 }
 
-function checkAttestations(slot, proposerIndex, attestations) {
+function checkAttestations(slot, block, attestations) {
     // Sort attestations by attestation data
     const attestationsByData = {};
     attestations.forEach(attestation => {
@@ -39,15 +39,15 @@ function checkAttestations(slot, proposerIndex, attestations) {
         }
     });
 
-    Object.entries(attestationsByData).forEach(([key, matchingAttestations]) => checkMatchingAttestations(slot, proposerIndex, key ,matchingAttestations));
+    Object.entries(attestationsByData).forEach(([key, matchingAttestations]) => checkMatchingAttestations(slot, block, key ,matchingAttestations));
 }
 
-function checkMatchingAttestations(slot, proposerIndex, key, attestations) {
+function checkMatchingAttestations(slot, block, key, attestations) {
     const previouslySeenBits = recentInclusions.map(block => (block && block[key]) || new BitSet()).reduce((a, b) => a.or(b));
     attestations.forEach(attestation => {
         const otherInclusions = attestations.filter(a => a != attestation).map(a => a.aggregation_bits).reduce((a, b) => a.or(b), new BitSet());
         if (otherInclusions.equals(otherInclusions.or(attestation.aggregation_bits))) {
-            console.log("Redundant attestation from %s found at slot %s", proposerIndex, slot, attestation);
+            reporter.report('Redundant Attestation', block, attestation);
         }
     });
 }
@@ -60,8 +60,8 @@ async function processToBlock(node, headSlot) {
             const blockResponse = await node.api.getBlock(slot);
             const attestations = blockResponse.data.message.body.attestations;
             if (attestations.length > 0) {
-                checkAttestations(slot, blockResponse.data.message.proposer_index, attestations)
-                recordAttestations(slot, blockResponse.data.message.proposer_index, attestations);
+                checkAttestations(slot, blockResponse.data.message, attestations)
+                recordAttestations(slot, blockResponse.data.message, attestations);
             }
         } catch (err) {
             if (err && err.responseCode == 404) {
@@ -83,7 +83,8 @@ async function handleReorg(node, commonAncestorSlot, bestSlot) {
 }
 
 module.exports = {
-    async start(node) {
+    async start(node, _reporter) {
+        reporter = _reporter;
         node.events.subscribe('head', async headEvent => {
             try {
                 await processToBlock(node, JSON.parse(headEvent).slot)

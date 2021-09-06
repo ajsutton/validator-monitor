@@ -8,9 +8,10 @@ const detectors = [
     require('./detectors/redundantAttestations.js'),
 ];
 
+const reporter = require('./reporting/logReporter.js');
 const node = new Node(settings);
 
-callDetectors('start', node);
+callDetectors('start', node, reporter);
 
 async function callDetectors(method, ...args) {
     detectors.forEach(async detector => {
