@@ -11,6 +11,7 @@ const MAX_INCLUSION_DISTANCE = 32;
 const recentInclusions = [];
 var latestBlockNumber = 0;
 var reporter;
+var node;
 
 // TODO: Identify reorgs by checking root of parent block?
 // TODO: Record where attestations were seen (block + attestation index)
@@ -57,6 +58,7 @@ async function processToBlock(node, headSlot) {
     for (var slot = startBlock; slot <= headSlot; slot++) {
         recentInclusions[slot % MAX_INCLUSION_DISTANCE] = {};
         try {
+            console.error("Get slot " + slot);
             const blockResponse = await node.api.getBlock(slot);
             const attestations = blockResponse.data.message.body.attestations;
             if (attestations.length > 0) {
@@ -64,11 +66,11 @@ async function processToBlock(node, headSlot) {
                 recordAttestations(slot, blockResponse.data.message, attestations);
             }
         } catch (err) {
-            if (err && err.responseCode == 404) {
-                recentInclusions[slot % MAX_INCLUSION_DISTANCE] = {};
-            } else {
-                console.error(err);
-            }
+            recentInclusions[slot % MAX_INCLUSION_DISTANCE] = {};
+            // if (err && err.responseCode == 404) {
+            // } else {
+                // console.error("Failed to load slot " + slot);
+            // }
         }
         latestBlockNumber = slot;
     }
@@ -83,16 +85,21 @@ async function handleReorg(node, commonAncestorSlot, bestSlot) {
 }
 
 module.exports = {
-    async start(node, _reporter) {
+    async processToSlot(slot) {
+        console.error("Process to slot " + slot);
+        await processToBlock(node, slot); 
+    },
+    async start(_node, _reporter) {
         reporter = _reporter;
-        node.events.subscribe('head', async headEvent => {
-            try {
-                await processToBlock(node, JSON.parse(headEvent).slot)
-            } catch (error) {
-                console.error("Failed to process head event", error);
-            }
-        });
-        node.events.subscribe('reorg', reorgEvent => handleReorg(node, reorgEvent.commonAncestorSlot, reorgEvent.bestSlot))
+        node = _node;
+        // node.events.subscribe('head', async headEvent => {
+        //     try {
+        //         await processToBlock(node, JSON.parse(headEvent).slot)
+        //     } catch (error) {
+        //         console.error("Failed to process head event", error);
+        //     }
+        // });
+        // node.events.subscribe('reorg', reorgEvent => handleReorg(node, reorgEvent.commonAncestorSlot, reorgEvent.bestSlot))
     },
     async poll() {
         
