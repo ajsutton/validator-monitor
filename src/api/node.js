@@ -6,6 +6,9 @@ module.exports = function(settings) {
     events.start(settings);
     return {
         events,
-        api: new Api(settings)
+        api: new Api(settings),
+        stop() {
+            events.stop();
+        }
     };
 };

@@ -4,6 +4,7 @@ const settings = {
     endSlot: process.argv[4],
 };
 
+const events = require('./api/events.js');
 const Node = require('./api/node.js');
 
 const detectors = [
@@ -15,12 +16,11 @@ const node = new Node(settings);
 
 callDetectors('start', node, reporter);
 
-processSlots();
+processSlots().then(() => events.stop());
 
 async function processSlots() {
     for (slot = settings.startSlot; slot <= settings.endSlot; slot++) {
         await detectors[0].processToSlot(slot);
-        // await callDetectors('processToSlot', slot);
     }
 }
 

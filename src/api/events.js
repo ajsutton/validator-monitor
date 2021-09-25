@@ -6,6 +6,10 @@ module.exports = {
         this.eventSource.onerror = err => console.error("Event stream failed", err);
     },
 
+    stop() {
+        this.eventSource.close();
+    },
+
     subscribe(eventType, listener) {
         this.eventSource.addEventListener(eventType, async e => {
             try {

@@ -1,7 +1,9 @@
 const got = require('got');
 const BitSet = require('bitset');
 
-const MAX_INCLUSION_DISTANCE = 32;
+const SLOTS_PER_EPOCH = 32;
+const MAX_INCLUSION_DISTANCE = SLOTS_PER_EPOCH;
+const MAX_SOURCE_DISTANCE = 5;
 
 // When each head event is retrieved, make sure we have the last 32 blocks processed here
 // For each block record attestation data hash to bitset of validators seen in that block
@@ -9,6 +11,7 @@ const MAX_INCLUSION_DISTANCE = 32;
 // Then add block record to this list.
 // Blocks are inserted as blockNumber % 32 so the array automatically overwrites itself to prune.
 const recentInclusions = [];
+const targets = {};
 var latestBlockNumber = 0;
 var reporter;
 var node;
@@ -28,17 +31,26 @@ function recordAttestations(slot, proposerIndex, attestations) {
     recentInclusions[slot % MAX_INCLUSION_DISTANCE] = inclusions;
 }
 
-function checkAttestations(slot, block, attestations) {
+async function checkAttestations(slot, block, attestations) {
     // Sort attestations by attestation data
     const attestationsByData = {};
-    attestations.forEach(attestation => {
+    for (var i = 0; i < attestations.length; i++) {
+        const attestation = attestations[i];
+        if (Number(attestation.data.slot) + 5 < slot) {
+            // Attestations with incorrect target checkpoint are automatically redundant if they are more than 5 slots old
+            const correctTargetRoot = await getCorrectTargetRoot(attestation.data.slot);
+            if (attestation.data.target.root != correctTargetRoot) {
+                reporter.report('Worthless Attestation', block, attestation);
+                continue;
+            }
+        }
         const key = getKey(attestation);
         if (attestationsByData.hasOwnProperty(key)) {
             attestationsByData[key].push(attestation);
         } else {
             attestationsByData[key] = [ attestation ];
         }
-    });
+    }
 
     Object.entries(attestationsByData).forEach(([key, matchingAttestations]) => checkMatchingAttestations(slot, block, key ,matchingAttestations));
 }
@@ -54,23 +66,19 @@ function checkMatchingAttestations(slot, block, key, attestations) {
 }
 
 async function processToBlock(node, headSlot) {
-    const startBlock = Math.max(latestBlockNumber, headSlot - MAX_INCLUSION_DISTANCE - 1) + 1;
+    const earlySlot = headSlot - MAX_INCLUSION_DISTANCE - 1;
+    const startBlock = Math.max(latestBlockNumber, earlySlot) + 1;
     for (var slot = startBlock; slot <= headSlot; slot++) {
         recentInclusions[slot % MAX_INCLUSION_DISTANCE] = {};
         try {
-            console.error("Get slot " + slot);
             const blockResponse = await node.api.getBlock(slot);
             const attestations = blockResponse.data.message.body.attestations;
             if (attestations.length > 0) {
-                checkAttestations(slot, blockResponse.data.message, attestations)
+                await checkAttestations(slot, blockResponse.data.message, attestations)
                 recordAttestations(slot, blockResponse.data.message, attestations);
             }
         } catch (err) {
             recentInclusions[slot % MAX_INCLUSION_DISTANCE] = {};
-            // if (err && err.responseCode == 404) {
-            // } else {
-                // console.error("Failed to load slot " + slot);
-            // }
         }
         latestBlockNumber = slot;
     }
@@ -84,9 +92,31 @@ async function handleReorg(node, commonAncestorSlot, bestSlot) {
     console.log("Reorg detected from %s to %s", commonAncestorSlot, bestSlot);
 }
 
+async function getCorrectTargetRoot(attestationSlot) {
+    const originalTargetSlot = getTargetCheckpointSlot(attestationSlot);
+    var targetSlot = originalTargetSlot;
+    while (targetSlot >= 0) {
+        if (targets.hasOwnProperty(targetSlot)) {
+            return targets[targetSlot];
+        }
+        try {
+            const correctRoot = await node.api.getBlockRoot(targetSlot);
+            for (var slot = targetSlot; slot <= originalTargetSlot; slot++) {
+                targets[slot] = correctRoot;
+            }
+            return correctRoot;
+        } catch (error) {
+            targetSlot--;
+        }
+    }
+}
+
+function getTargetCheckpointSlot(attestationSlot) {
+    return Math.floor(attestationSlot / SLOTS_PER_EPOCH) * SLOTS_PER_EPOCH;
+}
+
 module.exports = {
     async processToSlot(slot) {
-        console.error("Process to slot " + slot);
         await processToBlock(node, slot); 
     },
     async start(_node, _reporter) {
